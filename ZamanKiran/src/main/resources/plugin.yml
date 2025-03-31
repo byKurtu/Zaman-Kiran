@@ -1,0 +1,26 @@
+name: ZamanKiran
+version: '${version}'
+main: org.SolarSystem.zamanKiran.ZamanKiran
+api-version: '1.20'
+authors: [Kurtu]
+description: A powerful abilities plugin with visual effects using BlockDisplay
+website: https://github.com/byKurtu
+
+# Paper optimization flags
+load: STARTUP
+permissions:
+  zamankiran.use:
+    description: Allows using ZamanKiran commands
+    default: op
+
+commands:
+  zamankiran:
+    description: Zaman Kıran silahını verir
+    usage: /zamankiran ver
+    permission: zamankiran.use
+    aliases: [zk, zkiran]
+  zamankirangui:
+    description: Zaman Kıran menüsünü açar
+    usage: /zamankirangui
+    permission: zamankiran.use
+    aliases: [zkgui, zkg]
