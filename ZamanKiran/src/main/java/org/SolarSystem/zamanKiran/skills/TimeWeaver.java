@@ -88,7 +88,7 @@ public class TimeWeaver extends Skill {
 
     private void bindEntity(LivingEntity target, Location center) {
         Player caster = center.getWorld().getPlayers().stream()
-            .filter(p -> boundEntities.containsKey(p.getUniqueId()) && 
+            .filter(p -> centerLocations.containsKey(p.getUniqueId()) && 
                         centerLocations.get(p.getUniqueId()).equals(center))
             .findFirst()
             .orElse(null);
@@ -119,7 +119,7 @@ public class TimeWeaver extends Skill {
 
                 // Hasar
                 if (ticks % 20 == 0) {
-                    ((org.bukkit.entity.Damageable)target).damage(DAMAGE / 5, (Entity)null);
+                    target.damage(DAMAGE / 5, caster);
                     createDamageEffect(current);
                 }
             }
