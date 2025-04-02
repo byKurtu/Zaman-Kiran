@@ -6,11 +6,19 @@ import org.joml.Quaternionf;
 
 public class VectorUtils {
     public static Vector3d toVec3d(Vector bukkitVector) {
-        return new Vector3d(bukkitVector.getX(), bukkitVector.getY(), bukkitVector.getZ());
+        return new Vector3d(
+            bukkitVector.getX(),
+            bukkitVector.getY(),
+            bukkitVector.getZ()
+        );
     }
 
-    public static Vector toBukkitVector(Vector3d vec3d) {
-        return new Vector(vec3d.x, vec3d.y, vec3d.z);
+    public static Vector toBukkitVector(Vector3d jomlVector) {
+        return new Vector(
+            jomlVector.x,
+            jomlVector.y,
+            jomlVector.z
+        );
     }
 
     public static Vector3d rotateVector(Vector3d vector, Quaternionf rotation) {
@@ -68,5 +76,53 @@ public class VectorUtils {
         
         return new Quaternionf().rotateAxis((float)angle, 
             (float)rotationAxis.x, (float)rotationAxis.y, (float)rotationAxis.z);
+    }
+
+    public static double calculateProjectileDistance(double velocity, double angle, double gravity) {
+        // d = (v² * sin(2θ)) / g
+        double radians = Math.toRadians(angle);
+        return (velocity * velocity * Math.sin(2 * radians)) / Math.abs(gravity);
+    }
+
+    public static Vector rotateVector(Vector vector, double angleX, double angleY, double angleZ) {
+        double x = vector.getX();
+        double y = vector.getY();
+        double z = vector.getZ();
+        
+        // X ekseni etrafında döndürme
+        double cosX = Math.cos(angleX);
+        double sinX = Math.sin(angleX);
+        double newY = y * cosX - z * sinX;
+        double newZ = y * sinX + z * cosX;
+        y = newY;
+        z = newZ;
+        
+        // Y ekseni etrafında döndürme
+        double cosY = Math.cos(angleY);
+        double sinY = Math.sin(angleY);
+        double newX = x * cosY + z * sinY;
+        newZ = -x * sinY + z * cosY;
+        x = newX;
+        z = newZ;
+        
+        // Z ekseni etrafında döndürme
+        double cosZ = Math.cos(angleZ);
+        double sinZ = Math.sin(angleZ);
+        newX = x * cosZ - y * sinZ;
+        newY = x * sinZ + y * cosZ;
+        x = newX;
+        y = newY;
+        
+        return new Vector(x, y, z);
+    }
+
+    public static Vector calculateInterceptVector(Vector from, Vector target, double projectileSpeed) {
+        Vector toTarget = target.clone().subtract(from);
+        double distance = toTarget.length();
+        
+        // Hedefin hızı sıfır kabul edilirse:
+        double timeToTarget = distance / projectileSpeed;
+        
+        return toTarget.normalize().multiply(projectileSpeed);
     }
 } 

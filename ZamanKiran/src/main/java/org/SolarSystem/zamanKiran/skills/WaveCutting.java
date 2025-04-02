@@ -29,7 +29,7 @@ public class WaveCutting extends Skill {
         
         ArmorStand swordStand = createArmorStand(start, true, false);
         if (swordStand != null) {
-            swordStand.setHelmet(new org.bukkit.inventory.ItemStack(Material.NETHERITE_SWORD));
+            swordStand.setHelmet(new org.bukkit.inventory.ItemStack(Material.DIAMOND_PICKAXE));
         }
 
         List<BlockDisplay> waveDisplays = new ArrayList<>();

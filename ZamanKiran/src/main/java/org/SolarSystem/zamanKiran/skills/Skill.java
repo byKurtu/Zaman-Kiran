@@ -9,12 +9,13 @@ import org.bukkit.inventory.ItemStack;
 import org.joml.AxisAngle4f;
 import org.joml.Vector3f;
 import org.joml.Quaternionf;
+import org.bukkit.event.Listener;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Iterator;
 
-public abstract class Skill {
+public abstract class Skill implements Listener {
     protected final Plugin plugin;
     protected final String name;
     protected final int cooldown;
@@ -23,6 +24,7 @@ public abstract class Skill {
     protected final List<BlockDisplay> activeDisplays;
     protected final List<ItemDisplay> activeItemDisplays;
     protected boolean isActive = false;
+    protected long lastUsed;
 
     public Skill(Plugin plugin, String name, int cooldown, double manaCost) {
         this.plugin = plugin;
@@ -32,6 +34,7 @@ public abstract class Skill {
         this.activeArmorStands = new ArrayList<>();
         this.activeDisplays = new ArrayList<>();
         this.activeItemDisplays = new ArrayList<>();
+        this.lastUsed = 0;
     }
 
     public abstract void cast(Player caster);
@@ -180,6 +183,7 @@ public abstract class Skill {
 
     protected void startSkill() {
         isActive = true;
+        lastUsed = System.currentTimeMillis();
         cleanupEntities();
     }
 
@@ -188,6 +192,9 @@ public abstract class Skill {
         cleanupEntities();
     }
 
+    public boolean isOnCooldown() {
+        return System.currentTimeMillis() - lastUsed < cooldown * 1000;
+    }
 
     protected void cleanupEntities() {
         try {
@@ -290,5 +297,13 @@ public abstract class Skill {
 
     public double getManaCost() {
         return manaCost;
+    }
+
+    public double getRemainingCooldown() {
+        long currentTime = System.currentTimeMillis();
+        long lastUsedTime = this.lastUsed;
+        long cooldownMillis = this.cooldown * 1000;
+        long remainingMillis = Math.max(0, cooldownMillis - (currentTime - lastUsedTime));
+        return remainingMillis / 50.0; // Convert to ticks
     }
 } 

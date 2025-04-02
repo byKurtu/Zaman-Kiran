@@ -20,6 +20,9 @@ public class ChronoSphere extends Skill {
     private static final double RADIUS = 5.0;
     private static final int DURATION = 5 * 20; // 5 seconds
     private final Set<Entity> frozenEntities = new HashSet<>();
+    private boolean onCooldown = false;
+    private long cooldownStartTime;
+    private static final long COOLDOWN_DURATION = 20000; // 20 seconds
 
     public ChronoSphere(Plugin plugin) {
         super(plugin, "ChronoSphere", 30, 100);
@@ -207,5 +210,85 @@ public class ChronoSphere extends Skill {
             }
         }
         frozenEntities.clear();
+    }
+
+    public void rewindTime(Player player) {
+        if (isOnCooldown()) {
+            player.sendMessage(ChatColor.RED + "» Bu yetenek bekleme süresinde!");
+            return;
+        }
+
+        // Visual and sound effects
+        player.getWorld().playSound(player.getLocation(), Sound.BLOCK_BEACON_DEACTIVATE, 1.0f, 2.0f);
+        player.getWorld().spawnParticle(Particle.PORTAL, player.getLocation(), 50, 0.5, 1, 0.5, 0.1);
+
+        // Store current location
+        Location currentLoc = player.getLocation().clone();
+        
+        // Rewind effect
+        new BukkitRunnable() {
+            private int ticks = 0;
+            private final int REWIND_DURATION = 60; // 3 seconds
+            
+            @Override
+            public void run() {
+                if (ticks >= REWIND_DURATION) {
+                    this.cancel();
+                    return;
+                }
+                
+                // Create time rewind particles in a spiral
+                double angle = ticks * Math.PI / 10;
+                double radius = Math.sin(ticks * Math.PI / REWIND_DURATION) * 2;
+                Location particleLoc = currentLoc.clone().add(
+                    Math.cos(angle) * radius,
+                    ticks * 0.1,
+                    Math.sin(angle) * radius
+                );
+                
+                player.getWorld().spawnParticle(
+                    Particle.END_ROD,
+                    particleLoc,
+                    1, 0, 0, 0, 0
+                );
+                
+                if (ticks % 5 == 0) {
+                    player.getWorld().playSound(
+                        particleLoc,
+                        Sound.BLOCK_NOTE_BLOCK_CHIME,
+                        0.5f,
+                        1.0f + (float)ticks / REWIND_DURATION
+                    );
+                }
+                
+                ticks++;
+            }
+        }.runTaskTimer(plugin, 0L, 1L);
+
+        startCooldown();
+    }
+
+    private void startCooldown() {
+        onCooldown = true;
+        cooldownStartTime = System.currentTimeMillis();
+        
+        // Reset cooldown after duration
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                onCooldown = false;
+            }
+        }.runTaskLater(plugin, COOLDOWN_DURATION / 50); // Convert to ticks
+    }
+
+    public boolean isOnCooldown() {
+        if (!onCooldown) return false;
+        return System.currentTimeMillis() - cooldownStartTime < COOLDOWN_DURATION;
+    }
+
+    public double getRemainingCooldown() {
+        if (!onCooldown) return 0;
+        long remaining = COOLDOWN_DURATION - (System.currentTimeMillis() - cooldownStartTime);
+        return Math.max(0, remaining / 1000.0);
     }
 } 

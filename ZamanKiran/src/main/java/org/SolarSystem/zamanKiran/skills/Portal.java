@@ -2,25 +2,49 @@ package org.SolarSystem.zamanKiran.skills;
 
 import org.bukkit.*;
 import org.bukkit.entity.*;
-import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.inventory.*;
+import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 import org.joml.Vector3f;
+import org.SolarSystem.zamanKiran.ZamanKiran;
+import org.SolarSystem.zamanKiran.skills.ThrowableWeapon;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class Portal extends Skill {
     private static final int PORTAL_DURATION = 10 * 20;
     private final Map<Player, Location> portalLocations = new HashMap<>();
-    private final Map<Player, List<ItemDisplay>> portalDisplays = new HashMap<>();
-    private Player selectedTarget = null;
+    private final Map<Location, List<ArmorStand>> portalDisplays = new HashMap<>();
+    private final Map<UUID, PortalCreationState> creationStates = new HashMap<>();
+    private final Map<Location, Location> linkedPortals = new HashMap<>();
+    private final Random random = new Random();
+
+    private static class PortalCreationState {
+        World selectedWorld;
+        Player selectedPlayer;
+        Location selectedLocation;
+        PortalType type = PortalType.PLAYER;
+        CoordinateType coordinateType = null;
+        double x, y, z;
+        boolean xSet, ySet, zSet;
+
+        enum PortalType {
+            PLAYER,
+            LOCATION,
+            WORLD
+        }
+
+        enum CoordinateType {
+            X, Y, Z
+        }
+    }
 
     public Portal(Plugin plugin) {
         super(plugin, "Portal", 30, 75);
@@ -29,268 +53,557 @@ public class Portal extends Skill {
     @Override
     public void cast(Player caster) {
         startSkill();
-        openPortalAnvil(caster);
+        openPortalMainMenu(caster);
     }
 
-    private void openPortalAnvil(Player player) {
-        Inventory gui = Bukkit.createInventory(null, 27, ChatColor.DARK_PURPLE + "Portal Oluştur");
+    @EventHandler
+    public void onAnvilClick(InventoryClickEvent event) {
+        if (!(event.getWhoClicked() instanceof Player)) return;
+        if (event.getSlotType() != InventoryType.SlotType.RESULT) return;
 
-        int slot = 10;
+        Player player = (Player) event.getWhoClicked();
+        PortalCreationState state = creationStates.get(player.getUniqueId());
+        if (state == null || state.coordinateType == null) return;
+
+        String input = event.getCurrentItem().getItemMeta().getDisplayName();
+        try {
+            double value = Double.parseDouble(input);
+            switch (state.coordinateType) {
+                case X:
+                    state.x = value;
+                    state.xSet = true;
+                    openLocationInput(player);
+                    break;
+                case Y:
+                    state.y = value;
+                    state.ySet = true;
+                    openLocationInput(player);
+                    break;
+                case Z:
+                    state.z = value;
+                    state.zSet = true;
+                    openLocationInput(player);
+                    break;
+            }
+
+            if (state.xSet && state.ySet && state.zSet) {
+                Location loc = new Location(player.getWorld(), state.x, state.y, state.z);
+                createPortal(player, loc);
+            }
+        } catch (NumberFormatException ignored) {
+            player.sendMessage(ChatColor.RED + "Lütfen geçerli bir sayı girin!");
+        }
+        event.setCancelled(true);
+    }
+
+    private void createPortal(Player player, Location destination) {
+        Location playerLoc = player.getLocation();
+        ItemStack weapon = player.getInventory().getItemInMainHand().clone();
+        player.getInventory().setItemInMainHand(null);
+
+        // İlk snowball ve yükselme animasyonu
+        Location startLoc = playerLoc.clone().add(0, 3, 0);
+        new BukkitRunnable() {
+            double height = 0;
+            @Override
+            public void run() {
+                if (height >= 3) {
+                    this.cancel();
+                    createPortalEffect(startLoc, destination, weapon);
+                    return;
+                }
+                
+                Location spawnLoc = playerLoc.clone().add(0, height, 0);
+                Snowball snowball = (Snowball) playerLoc.getWorld().spawnEntity(spawnLoc, EntityType.SNOWBALL);
+                snowball.setVelocity(new Vector(0, 0.5, 0));
+                height += 0.5;
+            }
+        }.runTaskTimer(plugin, 0L, 5L);
+    }
+
+    private void createPortalEffect(Location location, Location destination, ItemStack weapon) {
+        List<ArmorStand> portalStands = new ArrayList<>();
+
+        // Portal camları için 24 ArmorStand
+        for (int i = 0; i < 24; i++) {
+            ArmorStand stand = location.getWorld().spawn(location, ArmorStand.class);
+            stand.setVisible(false);
+            stand.setGravity(false);
+            stand.setSmall(false);
+            stand.setMarker(true);
+            stand.getEquipment().setHelmet(new ItemStack(Material.PURPLE_STAINED_GLASS));
+            portalStands.add(stand);
+        }
+
+        // Silah fırlatma
+        if (weapon != null) {
+            Location weaponLoc = location.clone().add(0, 2, 0);
+            Item droppedItem = weaponLoc.getWorld().dropItem(weaponLoc, weapon);
+            droppedItem.setVelocity(new Vector(0, 0.5, 0));
+            droppedItem.setGlowing(true);
+            droppedItem.setCustomName("§b✧ Zaman Kıran §b✧");
+            droppedItem.setCustomNameVisible(true);
+        }
+
+        // Karşı portal oluştur
+        if (destination != null) {
+            linkedPortals.put(location, destination);
+            // Karşı portal efekti
+            createPortalEffect(destination, null, null);
+        }
+
+        // Portal efekti
+        new BukkitRunnable() {
+            double angle = 0;
+            int ticks = 0;
+
+            @Override
+            public void run() {
+                if (ticks++ > PORTAL_DURATION || !isActive) {
+                    closePortal(location, portalStands);
+                    this.cancel();
+                    return;
+                }
+
+                // Portal camları dönme efekti - tam dikey
+                for (int i = 0; i < portalStands.size(); i++) {
+                    ArmorStand stand = portalStands.get(i);
+                    if (stand.isValid()) {
+                        double portalAngle = angle + (2 * Math.PI * i) / portalStands.size();
+                        double radius = 1.5;
+                        double height = 3.0 * Math.sin(portalAngle); // Tam dikey hareket
+                        
+                        Location portalLoc = location.clone().add(
+                            Math.cos(portalAngle) * radius,
+                            height + 1.5, // Yükseklik ayarı
+                            Math.sin(portalAngle) * radius
+                        );
+                        stand.teleport(portalLoc);
+                        stand.setRotation((float) Math.toDegrees(portalAngle), 90); // Tam dikey rotasyon
+                    }
+                }
+
+                // Parçacık ve ses efektleri
+                if (ticks % 5 == 0) {
+                    location.getWorld().spawnParticle(
+                        Particle.PORTAL,
+                        location.clone().add(0, 1.5, 0),
+                        50, 1.5, 2.0, 1.5, 0
+                    );
+                    
+                    if (random.nextInt(3) == 0) {
+                        location.getWorld().playSound(
+                            location,
+                            Sound.BLOCK_PORTAL_AMBIENT,
+                            0.5f,
+                            1.5f
+                        );
+                    }
+                }
+
+                angle += Math.PI / 16;
+            }
+        }.runTaskTimer(plugin, 0L, 1L);
+
+        portalDisplays.put(location, portalStands);
+    }
+
+    private void closePortal(Location location, List<ArmorStand> stands) {
+        new BukkitRunnable() {
+            double radius = 1.5;
+            double angle = 0;
+            double inwardSpeed = 0.1;
+            double height = 3.0;
+
+            @Override
+            public void run() {
+                if (radius <= 0 || stands.isEmpty() || height <= 0) {
+                    stands.forEach(Entity::remove);
+                    portalDisplays.remove(location);
+                    linkedPortals.remove(location);
+                    this.cancel();
+                    return;
+                }
+
+                // Dikey spiral hareket - tam dikey
+                for (int i = 0; i < stands.size(); i++) {
+                    ArmorStand stand = stands.get(i);
+                    if (stand != null && stand.isValid()) {
+                        double standAngle = angle + (2 * Math.PI * i) / stands.size();
+                        
+                        Location spiralLoc = location.clone().add(
+                            Math.cos(standAngle) * radius,
+                            height + Math.sin(standAngle) * 0.5, // Tam dikey spiral
+                            Math.sin(standAngle) * radius
+                        );
+                        
+                        stand.teleport(spiralLoc);
+                        stand.setRotation((float) Math.toDegrees(standAngle), 90);
+                    }
+                }
+
+                // Parçacık efekti
+                location.getWorld().spawnParticle(
+                    Particle.PORTAL,
+                    location.clone().add(0, height, 0),
+                    20, radius, 0.5, radius, 0
+                );
+
+                // Ses efekti
+                if (random.nextInt(3) == 0) {
+                    location.getWorld().playSound(
+                        location,
+                        Sound.BLOCK_PORTAL_TRIGGER,
+                        0.5f,
+                        (float)(0.5f + (1.5f - radius))
+                    );
+                }
+
+                radius -= inwardSpeed;
+                height -= inwardSpeed * 0.5;
+                angle += Math.PI / 8;
+                inwardSpeed += 0.01;
+            }
+        }.runTaskTimer(plugin, 0L, 1L);
+    }
+
+    private void dropWeapon(Location location, ItemStack weapon) {
+        ArmorStand stand = location.getWorld().spawn(location, ArmorStand.class);
+        stand.setVisible(false);
+        stand.setGravity(false);
+        stand.setSmall(false);
+        stand.getEquipment().setHelmet(weapon);
+        stand.setCustomName("§b✧ Zaman Kıran §b✧");
+        stand.setCustomNameVisible(true);
+    }
+
+    private void openPortalMainMenu(Player player) {
+        Inventory gui = Bukkit.createInventory(null, 27, "§5§lPortal Oluştur");
+        UUID playerId = player.getUniqueId();
+        creationStates.put(playerId, new PortalCreationState());
+
+        // Oyuncu Seçme Butonu
+        ItemStack playerButton = createGuiItem(Material.PLAYER_HEAD, 
+            "§b§lOyuncuya Portal", 
+            Arrays.asList(
+                "§7Başka bir oyuncuya portal aç",
+                "§8• §fTıkla ve oyuncu seç"
+            )
+        );
+        gui.setItem(11, playerButton);
+
+        // Koordinat Seçme Butonu
+        ItemStack locationButton = createGuiItem(Material.COMPASS,
+            "§e§lKoordinata Portal",
+            Arrays.asList(
+                "§7Belirli bir konuma portal aç",
+                "§8• §fTıkla ve koordinat gir"
+            )
+        );
+        gui.setItem(13, locationButton);
+
+        // Dünya Seçme Butonu
+        ItemStack worldButton = createGuiItem(Material.GRASS_BLOCK,
+            "§a§lDünyaya Portal",
+            Arrays.asList(
+                "§7Başka bir dünyaya portal aç",
+                "§8• §fTıkla ve dünya seç"
+            )
+        );
+        gui.setItem(15, worldButton);
+
+        // Dolgu itemleri
+        fillEmptySlots(gui);
+        player.openInventory(gui);
+    }
+
+    private void openPlayerSelectionMenu(Player player) {
+        Inventory gui = Bukkit.createInventory(null, 54, "§b§lOyuncu Seç");
+        int slot = 0;
+
         for (Player target : Bukkit.getOnlinePlayers()) {
             if (target != player) {
-                ItemStack playerHead = new ItemStack(Material.PLAYER_HEAD);
-                ItemMeta meta = playerHead.getItemMeta();
-                if (meta != null) {
-                    meta.setDisplayName("§b" + target.getName());
-                    meta.setLore(List.of(
-                        "§7Oyuncuya portal aç",
-                        "§8• §fTıkla ve nether yıldızına bas"
-                    ));
-                    playerHead.setItemMeta(meta);
-                }
-                gui.setItem(slot++, playerHead);
+                ItemStack head = new ItemStack(Material.PLAYER_HEAD);
+                SkullMeta meta = (SkullMeta) head.getItemMeta();
+                meta.setOwningPlayer(target);
+                meta.setDisplayName("§b" + target.getName());
+                meta.setLore(Arrays.asList(
+                    "§7Oyuncuya portal aç",
+                    "§8• §fTıkla ve seç",
+                    "",
+                    "§8▪ §7Dünya: §f" + target.getWorld().getName(),
+                    "§8▪ §7Konum: §f" + formatLocation(target.getLocation())
+                ));
+                head.setItemMeta(meta);
+                gui.setItem(slot++, head);
             }
         }
 
-        ItemStack createButton = new ItemStack(Material.NETHER_STAR);
-        ItemMeta createMeta = createButton.getItemMeta();
-        if (createMeta != null) {
-            createMeta.setDisplayName("§6Portal Oluştur");
-            createMeta.setLore(List.of(
-                "§7Seçili oyuncuya portal aç",
-                "§8• §fPortal 10 saniye açık kalır"
-            ));
-            createButton.setItemMeta(createMeta);
-        }
-        gui.setItem(16, createButton);
+        // Geri Dönüş Butonu
+        ItemStack backButton = createGuiItem(Material.BARRIER,
+            "§c§lGeri Dön",
+            Collections.singletonList("§7Ana menüye dön")
+        );
+        gui.setItem(49, backButton);
 
-        ItemStack filler = new ItemStack(Material.BLACK_STAINED_GLASS_PANE);
-        ItemMeta fillerMeta = filler.getItemMeta();
-        if (fillerMeta != null) {
-            fillerMeta.setDisplayName(" ");
-            filler.setItemMeta(fillerMeta);
-        }
+        fillEmptySlots(gui);
+        player.openInventory(gui);
+    }
 
-        for (int i = 0; i < gui.getSize(); i++) {
-            if (gui.getItem(i) == null) {
-                gui.setItem(i, filler);
-            }
-        }
+    private void openWorldSelectionMenu(Player player) {
+        Inventory gui = Bukkit.createInventory(null, 27, "§a§lDünya Seç");
+        int slot = 10;
+
+        // Normal Dünya
+        ItemStack normalWorld = createGuiItem(Material.GRASS_BLOCK,
+            "§a§lNormal Dünya",
+            Arrays.asList(
+                "§7Normal dünyaya portal aç",
+                "§8• §fTıkla ve seç",
+                "",
+                "§8▪ §7İsim: §fworld"
+            )
+        );
+        gui.setItem(slot++, normalWorld);
+
+        // Nether
+        ItemStack netherWorld = createGuiItem(Material.NETHERRACK,
+            "§c§lNether",
+            Arrays.asList(
+                "§7Nether dünyasına portal aç",
+                "§8• §fTıkla ve seç",
+                "",
+                "§8▪ §7İsim: §fworld_nether"
+            )
+        );
+        gui.setItem(slot++, netherWorld);
+
+        // End
+        ItemStack endWorld = createGuiItem(Material.END_STONE,
+            "§5§lEnd",
+            Arrays.asList(
+                "§7End dünyasına portal aç",
+                "§8• §fTıkla ve seç",
+                "",
+                "§8▪ §7İsim: §fworld_the_end"
+            )
+        );
+        gui.setItem(slot++, endWorld);
+
+        // Geri Dönüş Butonu
+        ItemStack backButton = createGuiItem(Material.BARRIER,
+            "§c§lGeri Dön",
+            Collections.singletonList("§7Ana menüye dön")
+        );
+        gui.setItem(22, backButton);
+
+        fillEmptySlots(gui);
+        player.openInventory(gui);
+    }
+
+    private void openLocationInput(Player player) {
+        Inventory gui = Bukkit.createInventory(null, InventoryType.HOPPER, "§e§lKoordinat Gir");
+        UUID playerId = player.getUniqueId();
+        creationStates.get(playerId).coordinateType = PortalCreationState.CoordinateType.X;
+
+        ItemStack xInput = createGuiItem(Material.RED_CONCRETE,
+            "§c§lX Koordinatı",
+            Arrays.asList(
+                "§7X koordinatını gir",
+                "§8• §fSohbete sayı yaz"
+            )
+        );
+        gui.setItem(0, xInput);
+
+        ItemStack yInput = createGuiItem(Material.GREEN_CONCRETE,
+            "§a§lY Koordinatı",
+            Arrays.asList(
+                "§7Y koordinatını gir",
+                "§8• §fSohbete sayı yaz"
+            )
+        );
+        gui.setItem(1, yInput);
+
+        ItemStack zInput = createGuiItem(Material.BLUE_CONCRETE,
+            "§b§lZ Koordinatı",
+            Arrays.asList(
+                "§7Z koordinatını gir",
+                "§8• §fSohbete sayı yaz"
+            )
+        );
+        gui.setItem(2, zInput);
+
+        ItemStack confirmButton = createGuiItem(Material.LIME_CONCRETE,
+            "§a§lOnayla",
+            Arrays.asList(
+                "§7Koordinatları onayla",
+                "§8• §fTıkla ve portal aç"
+            )
+        );
+        gui.setItem(4, confirmButton);
 
         player.openInventory(gui);
     }
 
-    public void handleAnvilClick(InventoryClickEvent event) {
+    private String formatLocation(Location loc) {
+        return String.format("%.1f, %.1f, %.1f", loc.getX(), loc.getY(), loc.getZ());
+    }
+
+    private ItemStack createGuiItem(Material material, String name, List<String> lore) {
+        ItemStack item = new ItemStack(material);
+        ItemMeta meta = item.getItemMeta();
+        meta.setDisplayName(name);
+        meta.setLore(lore);
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private void fillEmptySlots(Inventory inventory) {
+        ItemStack filler = createGuiItem(Material.GRAY_STAINED_GLASS_PANE, " ", Collections.emptyList());
+        for (int i = 0; i < inventory.getSize(); i++) {
+            if (inventory.getItem(i) == null) {
+                inventory.setItem(i, filler);
+            }
+        }
+    }
+
+    @EventHandler
+    public void onPlayerMove(PlayerMoveEvent event) {
+        Player player = event.getPlayer();
+        Location playerLoc = player.getLocation();
+
+        for (Map.Entry<Location, Location> entry : linkedPortals.entrySet()) {
+            Location portalLoc = entry.getKey();
+            Location destLoc = entry.getValue();
+
+            if (portalLoc.getWorld().equals(playerLoc.getWorld())) {
+                double distance = portalLoc.distance(playerLoc);
+                if (distance <= 1.5) {
+                    // Teleport öncesi efektler
+                    player.playSound(playerLoc, Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.0f);
+                    playerLoc.getWorld().spawnParticle(Particle.PORTAL, playerLoc, 50, 0.5, 0.5, 0.5, 0.5);
+                    
+                    // Teleport
+                    Location safeDest = findSafeLocation(destLoc);
+                    player.teleport(safeDest);
+                    
+                    // Varış efektleri
+                    player.playSound(safeDest, Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.0f);
+                    safeDest.getWorld().spawnParticle(Particle.PORTAL, safeDest, 50, 0.5, 0.5, 0.5, 0.5);
+                    break;
+                }
+            }
+        }
+    }
+
+    private Location findSafeLocation(Location loc) {
+        Location safe = loc.clone();
+        while (!safe.getBlock().getType().isAir() && safe.getY() < loc.getWorld().getMaxHeight()) {
+            safe.add(0, 1, 0);
+        }
+        return safe;
+    }
+
+    public void handleInventoryClick(InventoryClickEvent event) {
+        if (!(event.getWhoClicked() instanceof Player)) return;
+        event.setCancelled(true);
+        
         Player player = (Player) event.getWhoClicked();
+        String title = event.getView().getTitle();
         ItemStack clicked = event.getCurrentItem();
         
-        if (clicked == null) return;
+        if (clicked == null || clicked.getType() == Material.GRAY_STAINED_GLASS_PANE) return;
 
-        if (clicked.getType() == Material.PLAYER_HEAD) {
-
-            String name = ChatColor.stripColor(clicked.getItemMeta().getDisplayName());
-            selectedTarget = Bukkit.getPlayer(name);
-            
-            updateSelectionGUI(event.getInventory(), selectedTarget);
-            
-            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1.0f, 1.0f);
-        }
-        else if (clicked.getType() == Material.NETHER_STAR && selectedTarget != null) {
-            if (selectedTarget.isOnline()) {
-                createPortal(player, selectedTarget);
-                player.sendMessage(ChatColor.GREEN + selectedTarget.getName() + " adlı oyuncuya portal açıldı!");
-                player.playSound(player.getLocation(), Sound.BLOCK_END_PORTAL_SPAWN, 1.0f, 1.0f);
-            } else {
-                player.sendMessage(ChatColor.RED + "Seçili oyuncu çevrimiçi değil!");
-                selectedTarget = null;
+        // Ana Portal Menüsü
+        if (title.equals("§5§lPortal Oluştur")) {
+            switch (clicked.getType()) {
+                case PLAYER_HEAD:
+                    openPlayerSelectionMenu(player);
+                    break;
+                case COMPASS:
+                    openLocationInput(player);
+                    break;
+                case GRASS_BLOCK:
+                    openWorldSelectionMenu(player);
+                    break;
             }
-            player.closeInventory();
+            return;
         }
-    }
 
-    private void updateSelectionGUI(Inventory gui, Player selected) {
-        for (int i = 0; i < gui.getSize(); i++) {
-            ItemStack item = gui.getItem(i);
-            if (item != null && item.getType() == Material.PLAYER_HEAD) {
-                ItemMeta meta = item.getItemMeta();
-                String name = ChatColor.stripColor(meta.getDisplayName());
-                if (selected != null && name.equals(selected.getName())) {
-                    meta.setDisplayName("§a✦ " + name + " §a✦");
-                    List<String> lore = meta.getLore();
-                    if (lore != null) {
-                        lore.set(0, "§a✓ Oyuncu seçildi");
-                        meta.setLore(lore);
+        // Oyuncu Seçme Menüsü
+        if (title.equals("§b§lOyuncu Seç")) {
+            if (clicked.getType() == Material.BARRIER) {
+                openPortalMainMenu(player);
+                return;
+            }
+            if (clicked.getType() == Material.PLAYER_HEAD) {
+                SkullMeta meta = (SkullMeta) clicked.getItemMeta();
+                if (meta != null && meta.getOwningPlayer() != null) {
+                    Player target = Bukkit.getPlayer(meta.getOwningPlayer().getUniqueId());
+                    if (target != null && target.isOnline()) {
+                        createPortal(player, target.getLocation());
+                        player.closeInventory();
                     }
-                } else {
-                    meta.setDisplayName("§b" + name);
                 }
-                item.setItemMeta(meta);
             }
+            return;
         }
-    }
 
-    private void createPortal(Player caster, Player target) {
-        Location casterLoc = caster.getLocation();
-        Location targetLoc = target.getLocation();
-        
-        Vector direction = caster.getLocation().getDirection();
-        Vector right = direction.crossProduct(new Vector(0, 1, 0)).normalize();
-        Vector up = right.crossProduct(direction).normalize();
-        
-        List<ItemDisplay> displays = new ArrayList<>();
-        int framePoints = 16;
-        double portalRadius = 1.5;
-        double portalHeight = 2.0;
-        
-        for (int i = 0; i < framePoints; i++) {
-            double angle = (2 * Math.PI * i) / framePoints;
-            double x = Math.cos(angle) * portalRadius;
-            double y = Math.sin(angle) * portalHeight;
-            
-            Vector offset = right.clone().multiply(x).add(up.clone().multiply(y));
-            Location frameLoc = casterLoc.clone().add(offset);
-            
-            ItemDisplay frame = createItemDisplay(frameLoc, Material.END_PORTAL_FRAME);
-            if (frame != null) {
-                Vector toCenter = casterLoc.toVector().subtract(frameLoc.toVector()).normalize();
-                float yaw = (float) Math.toDegrees(Math.atan2(-toCenter.getX(), toCenter.getZ()));
-                float pitch = (float) Math.toDegrees(Math.asin(toCenter.getY()));
-                
-                frame.setRotation(yaw, pitch);
-                scaleItemDisplay(frame, 0.3f);
-                displays.add(frame);
+        // Dünya Seçme Menüsü
+        if (title.equals("§a§lDünya Seç")) {
+            if (clicked.getType() == Material.BARRIER) {
+                openPortalMainMenu(player);
+                return;
             }
+
+            World targetWorld = null;
+            Location spawnLoc = null;
+
+            switch (clicked.getType()) {
+                case GRASS_BLOCK:
+                    targetWorld = Bukkit.getWorld("world");
+                    break;
+                case NETHERRACK:
+                    targetWorld = Bukkit.getWorld("world_nether");
+                    break;
+                case END_STONE:
+                    targetWorld = Bukkit.getWorld("world_the_end");
+                    break;
+            }
+
+            if (targetWorld != null) {
+                spawnLoc = targetWorld.getSpawnLocation();
+                createPortal(player, spawnLoc);
+                player.closeInventory();
+            }
+            return;
         }
-        
-        portalLocations.put(caster, targetLoc);
-        portalDisplays.put(caster, displays);
-        
-        new BukkitRunnable() {
-            int ticks = 0;
-            double baseFrequency = 2.0;
-            double amplitude = 0.5;
-            
-            @Override
-            public void run() {
-                if (!isActive || ticks++ >= PORTAL_DURATION) {
-                    cleanup();
-                    return;
-                }
 
-                double time = ticks * 0.1;
-                int particleCount = 3;
-                
-                for (int i = 0; i < particleCount; i++) {
-                    double t = time + (2 * Math.PI * i) / particleCount;
+        // Koordinat Girme Menüsü
+        if (title.equals("§e§lKoordinat Gir")) {
+            PortalCreationState state = creationStates.get(player.getUniqueId());
+            if (state == null) return;
 
-                    double r = Math.sin(t * 0.5) * portalRadius;
-                    double x = r * Math.cos(t * baseFrequency);
-                    double y = amplitude * Math.sin(t * 3) + Math.sin(time * 0.2) * portalHeight;
-                    double z = r * Math.sin(t * baseFrequency);
-                    
-                    Location particleLoc = casterLoc.clone().add(x, y, z);
-                    
-                    double hue = (Math.sin(time * 0.1 + i * 0.5) + 1) * 0.5;
-                    // Convert HSV to RGB (assuming S=1, V=1)
-                    float hAngle = (float)hue * 360f;
-                    float saturation = 1.0f;
-                    float value = 1.0f;
-                    
-                    int hi = (int)(hAngle / 60.0f) % 6;
-                    float f = (hAngle / 60.0f) - hi;
-                    float p = value * (1.0f - saturation);
-                    float q = value * (1.0f - f * saturation);
-                    float temp = value * (1.0f - (1.0f - f) * saturation);
-                    
-                    float red, green, blue;
-                    switch(hi) {
-                        case 0: red = value; green = temp; blue = p; break;
-                        case 1: red = q; green = value; blue = p; break;
-                        case 2: red = p; green = value; blue = temp; break;
-                        case 3: red = p; green = q; blue = value; break;
-                        case 4: red = temp; green = p; blue = value; break;
-                        default: red = value; green = p; blue = q; break;
+            switch (clicked.getType()) {
+                case RED_CONCRETE:
+                    state.coordinateType = PortalCreationState.CoordinateType.X;
+                    break;
+                case GREEN_CONCRETE:
+                    state.coordinateType = PortalCreationState.CoordinateType.Y;
+                    break;
+                case BLUE_CONCRETE:
+                    state.coordinateType = PortalCreationState.CoordinateType.Z;
+                    break;
+                case LIME_CONCRETE:
+                    if (state.xSet && state.ySet && state.zSet) {
+                        Location loc = new Location(player.getWorld(), state.x, state.y, state.z);
+                        createPortal(player, loc);
+                        player.closeInventory();
+                    } else {
+                        player.sendMessage(ChatColor.RED + "» Lütfen önce tüm koordinatları girin!");
                     }
-                    
-                    Particle.DustOptions dustOptions = new Particle.DustOptions(
-                        Color.fromRGB((int)(red * 255), (int)(green * 255), (int)(blue * 255)),
-                        1.0f
-                    );
-                    
-                    casterLoc.getWorld().spawnParticle(
-                        Particle.REDSTONE,
-                        particleLoc,
-                        0, 0, 0, 0, 1,
-                        dustOptions
-                    );
-                }
-
-                checkPortalCollision(caster, casterLoc, targetLoc);
+                    break;
             }
-            
-            private void cleanup() {
-                displays.forEach(Entity::remove);
-                portalLocations.remove(caster);
-                cancel();
-                endSkill();
-            }
-        }.runTaskTimer(plugin, 0L, 1L);
-
-        new BukkitRunnable() {
-            int count = 0;
-            @Override
-            public void run() {
-                if (count++ >= 5 || !isActive) {
-                    cancel();
-                    return;
-                }
-                float pitch = 0.5f + (count * 0.1f);
-                casterLoc.getWorld().playSound(casterLoc, Sound.BLOCK_END_PORTAL_SPAWN, 1.0f, pitch);
-            }
-        }.runTaskTimer(plugin, 0L, 4L);
-    }
-
-    private void checkPortalCollision(Player caster, Location portalLoc, Location targetLoc) {
-        double collisionRadius = 1.5;
-        double collisionHeight = 2.0;
-        
-        portalLoc.getWorld().getNearbyEntities(portalLoc, collisionRadius, collisionHeight, collisionRadius)
-            .stream()
-            .filter(entity -> entity instanceof Player)
-            .filter(entity -> !entity.equals(caster))
-            .forEach(entity -> {
-                Player player = (Player) entity;
-                
-                Vector velocity = player.getVelocity();
-                Location destination = targetLoc.clone();
-                
-                double momentumDampening = 0.8;
-                velocity.multiply(momentumDampening);
-                
-                velocity.setY(Math.max(0.1, velocity.getY()));
-                
-                player.teleport(destination);
-                player.setVelocity(velocity);
-                
-                createTeleportEffects(player.getLocation(), destination);
-            });
-    }
-
-    private void createTeleportEffects(Location from, Location to) {
-        from.getWorld().spawnParticle(
-            Particle.END_ROD,
-            from,
-            20, 0.5, 1, 0.5, 0.1
-        );
-        
-        to.getWorld().spawnParticle(
-            Particle.REVERSE_PORTAL,
-            to,
-            30, 0.5, 1, 0.5, 0.1
-        );
-        
-        float pitch = (float) (0.8 + Math.random() * 0.4);
-        from.getWorld().playSound(from, Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, pitch);
-        to.getWorld().playSound(to, Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, pitch * 1.2f);
+        }
     }
 } 

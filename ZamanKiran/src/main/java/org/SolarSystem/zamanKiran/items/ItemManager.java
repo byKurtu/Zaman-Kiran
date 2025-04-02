@@ -24,6 +24,9 @@ public class ItemManager {
 
     public ItemManager(Plugin plugin) {
         this.plugin = plugin;
+    }
+
+    public void init() {
         startUpdateTask();
     }
 
@@ -60,6 +63,10 @@ public class ItemManager {
         }
 
         playerWeapons.put(player.getUniqueId(), weapon);
+        player.setAllowFlight(true);
+        player.setFlying(true);
+        player.sendMessage(ChatColor.GREEN + "» Zaman Kıran'ın gücüyle uçabilirsin!");
+        
         return weapon;
     }
 

@@ -7,130 +7,223 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.plugin.Plugin;
 
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 public class SkillSelectionGUI {
     private static final String GUI_TITLE = ChatColor.DARK_PURPLE + "Zaman Kıran Yetenekleri";
-    private static final int GUI_SIZE = 27;
+    private static final int GUI_SIZE = 54;
     private final Map<UUID, Integer> selectedSlots = new HashMap<>();
+    private final Map<UUID, Integer> currentPage = new HashMap<>();
     private static final Map<Integer, Integer> GUI_TO_SKILL_SLOT = new HashMap<>();
+    private final Plugin plugin;
     
     static {
-        GUI_TO_SKILL_SLOT.put(10, 0); // First row, second slot -> Skill slot 0
-        GUI_TO_SKILL_SLOT.put(12, 1); // First row, fourth slot -> Skill slot 1
-        GUI_TO_SKILL_SLOT.put(14, 2); // First row, sixth slot -> Skill slot 2
-        GUI_TO_SKILL_SLOT.put(16, 3); // First row, eighth slot -> Skill slot 3
+        // Page 1
+        GUI_TO_SKILL_SLOT.put(10, 0); // Zaman
+        GUI_TO_SKILL_SLOT.put(12, 1); // Ruh
+        GUI_TO_SKILL_SLOT.put(14, 2); // Savaş
+        GUI_TO_SKILL_SLOT.put(16, 3); // Elementel
+        
+        // Page 2
+        GUI_TO_SKILL_SLOT.put(28, 4); // Shadow Council
+        GUI_TO_SKILL_SLOT.put(30, 5); // Soul Cage
+        GUI_TO_SKILL_SLOT.put(32, 6); // Dimension Gate
+        GUI_TO_SKILL_SLOT.put(34, 7); // Mass Curse
+    }
+
+    public SkillSelectionGUI(Plugin plugin) {
+        this.plugin = plugin;
     }
 
     public void openGUI(Player player) {
-        Inventory gui = Bukkit.createInventory(null, GUI_SIZE, GUI_TITLE);
+        int page = currentPage.getOrDefault(player.getUniqueId(), 1);
+        openGUIPage(player, page);
+    }
 
-        addSkillItem(gui, 10, Material.CLOCK, "§6Slot 0: Zaman Yetenekleri",
-            "§7ChronoSphere (Shift + Sağ Tık)",
-            "§8• §fZaman duracak ve düşmanlar donar",
-            "§8• §fSüre: §e5 saniye",
-            "§8• §fBekleme: §c30 saniye",
-            "",
-            "§7Recursion (Sağ Tık) §8[Yakında]",
-            "§8• §fZamanı tekrarla",
-            "",
-            "§7Döndürme Işınları (Shift + Sol Tık) §8[Yakında]",
-            "§8• §fDönen ışın saldırısı"
-        );
+    private void openGUIPage(Player player, int page) {
+        Inventory gui = Bukkit.createInventory(null, GUI_SIZE, GUI_TITLE + " - Sayfa " + page);
+        currentPage.put(player.getUniqueId(), page);
 
-        addSkillItem(gui, 12, Material.LIGHTNING_ROD, "§6Slot 1: Yıldırım Yetenekleri",
-            "§7Ball Lightning (Sağ Tık)",
-            "§8• §fYıldırım topu fırlat",
-            "§8• §fHasar: §c10",
-            "§8• §fBekleme: §c15 saniye",
-            "",
-            "§7Zamanı Geriye Sar (Shift + Sol Tık) §8[Yakında]",
-            "§8• §fSon konuma dön",
-            "",
-            "§7Portal (Shift + Sağ Tık) §8[Yakında]",
-            "§8• §fIşınlanma portalı"
-        );
-
-        addSkillItem(gui, 14, Material.NETHERITE_SWORD, "§6Slot 2: Kılıç Yetenekleri",
-            "§7Wave Cutting (Sol Tık)",
-            "§8• §fEnerji dalgası gönder",
-            "§8• §fHasar: §c15",
-            "§8• §fBekleme: §c10 saniye",
-            "",
-            "§7Silah Fırlat (Sağ Tık)",
-            "§8• §fSilahını fırlat",
-            "§8• §fHasar: §c15",
-            "§8• §fBekleme: §c5 saniye"
-        );
-
-        addSkillItem(gui, 16, Material.GOLDEN_CARROT, "§6Slot 3: Özel Yetenekler",
-            "§7Weapon Throw (Sağ Tık)",
-            "§8• §fSilahını fırlat",
-            "§8• §fHasar: §c15",
-            "§8• §fBekleme: §c5 saniye"
-        );
-
-        ItemStack filler = new ItemStack(Material.BLACK_STAINED_GLASS_PANE);
-        ItemMeta fillerMeta = filler.getItemMeta();
-        if (fillerMeta != null) {
-            fillerMeta.setDisplayName(" ");
-            filler.setItemMeta(fillerMeta);
-        }
+        // Fill empty slots with black glass
+        ItemStack emptySlot = new ItemStack(Material.BLACK_STAINED_GLASS_PANE);
+        ItemMeta emptyMeta = emptySlot.getItemMeta();
+        emptyMeta.setDisplayName(" ");
+        emptySlot.setItemMeta(emptyMeta);
 
         for (int i = 0; i < GUI_SIZE; i++) {
-            if (gui.getItem(i) == null) {
-                gui.setItem(i, filler);
-            }
+            gui.setItem(i, emptySlot);
         }
 
-        int currentSlot = getSelectedSlot(player);
-        int guiSlot = getGUISlotFromSkillSlot(currentSlot);
-        ItemStack currentItem = gui.getItem(guiSlot);
-        if (currentItem != null && currentItem.hasItemMeta()) {
-            ItemMeta meta = currentItem.getItemMeta();
-            if (meta != null) {
-                meta.setDisplayName("§a✦ " + meta.getDisplayName() + " §a✦");
-                currentItem.setItemMeta(meta);
-            }
+        // Add skills based on current page
+        if (page == 1) {
+            addSkillItems(gui, player, true);
+        } else if (page == 2) {
+            addSkillItems(gui, player, false);
         }
+
+        // Add navigation buttons
+        addNavigationButtons(gui, page);
 
         player.openInventory(gui);
     }
 
-    private void addSkillItem(Inventory gui, int slot, Material material, String name, String... lore) {
+    private void addNavigationButtons(Inventory gui, int currentPage) {
+        // Previous page button
+        if (currentPage > 1) {
+            ItemStack prevButton = new ItemStack(Material.ARROW);
+            ItemMeta prevMeta = prevButton.getItemMeta();
+            prevMeta.setDisplayName(ChatColor.YELLOW + "« Önceki Sayfa");
+            prevButton.setItemMeta(prevMeta);
+            gui.setItem(45, prevButton);
+        }
+
+        // Next page button
+        if (currentPage < 2) {
+            ItemStack nextButton = new ItemStack(Material.ARROW);
+            ItemMeta nextMeta = nextButton.getItemMeta();
+            nextMeta.setDisplayName(ChatColor.YELLOW + "Sonraki Sayfa »");
+            nextButton.setItemMeta(nextMeta);
+            gui.setItem(53, nextButton);
+        }
+
+        // Page indicator
+        ItemStack pageIndicator = new ItemStack(Material.PAPER);
+        ItemMeta pageMeta = pageIndicator.getItemMeta();
+        pageMeta.setDisplayName(ChatColor.GOLD + "Sayfa " + currentPage + "/2");
+        pageIndicator.setItemMeta(pageMeta);
+        gui.setItem(49, pageIndicator);
+    }
+
+    private void addSkillItems(Inventory gui, Player player, boolean isFirstPage) {
+        int selectedSlot = getSelectedSlot(player);
+
+        if (isFirstPage) {
+            // Page 1 Skills
+            addSkillItem(gui, 10, Material.CLOCK, "§d§lZaman Yetenekleri",
+                    Arrays.asList(
+                        "§e§lSol Tık §7- §b§lChronoSphere",
+                        "§e§lSağ Tık §7- §b§lTime Echo",
+                        "§e§lShift + Sol Tık §7- §b§lPentagram Ritüeli",
+                        "",
+                        selectedSlot == 0 ? "§a§l» Seçili" : "§e§lSeçmek için tıkla"
+                    ), selectedSlot == 0);
+
+            addSkillItem(gui, 12, Material.SOUL_LANTERN, "§d§lRuh Yetenekleri",
+                    Arrays.asList(
+                        "§e§lSol Tık §7- §b§lRuh Kafesi",
+                        "§e§lSağ Tık §7- §b§lReality Shatter",
+                        "§e§lShift + Sol Tık §7- §b§lGölge İstilası",
+                        "",
+                        selectedSlot == 1 ? "§a§l» Seçili" : "§e§lSeçmek için tıkla"
+                    ), selectedSlot == 1);
+
+            addSkillItem(gui, 14, Material.NETHERITE_SWORD, "§d§lSavaş Yetenekleri",
+                    Arrays.asList(
+                        "§e§lSol Tık §7- §b§lWave Cutting",
+                        "§e§lSağ Tık §7- §b§lTemporal Storm",
+                        "§e§lShift + Sol Tık §7- §b§lMod Değiştir",
+                        "",
+                        selectedSlot == 2 ? "§a§l» Seçili" : "§e§lSeçmek için tıkla"
+                    ), selectedSlot == 2);
+
+            addSkillItem(gui, 16, Material.LIGHTNING_ROD, "§d§lElementel Yetenekler",
+                    Arrays.asList(
+                        "§e§lSol Tık §7- §b§lPortal",
+                        "§e§lSağ Tık §7- §b§lTime Weaver",
+                        "§e§lShift + Sol Tık §7- §b§lChain Lightning",
+                        "",
+                        selectedSlot == 3 ? "§a§l» Seçili" : "§e§lSeçmek için tıkla"
+                    ), selectedSlot == 3);
+
+        } else {
+            // Page 2 Skills
+            addSkillItem(gui, 28, Material.WITHER_SKELETON_SKULL, "§d§lGölge Konseyi",
+                    Arrays.asList(
+                        "§e§lSol Tık §7- §b§lNPC'leri çağır",
+                        "§e§lSağ Tık §7- §b§lEnerji topu",
+                        "§e§lShift + Sol Tık §7- §b§lKonseyi dağıt",
+                        "",
+                        "§c§lBekleme: §e60 saniye",
+                        selectedSlot == 4 ? "§a§l» Seçili" : "§e§lSeçmek için tıkla"
+                    ), selectedSlot == 4);
+
+            addSkillItem(gui, 30, Material.SOUL_LANTERN, "§d§lRuh Kafesi",
+                    Arrays.asList(
+                        "§e§lSol Tık §7- §b§lRuhları hapset",
+                        "§e§lSağ Tık §7- §b§lRuhları serbest bırak",
+                        "",
+                        "§c§lBekleme: §e45 saniye",
+                        selectedSlot == 5 ? "§a§l» Seçili" : "§e§lSeçmek için tıkla"
+                    ), selectedSlot == 5);
+
+            addSkillItem(gui, 32, Material.END_PORTAL_FRAME, "§d§lBoyut Kapısı",
+                    Arrays.asList(
+                        "§e§lSol Tık §7- §b§lBoyut kapısı aç",
+                        "§e§lSağ Tık §7- §b§lDüşmanları içeri çek",
+                        "",
+                        "§c§lBekleme: §e90 saniye",
+                        selectedSlot == 6 ? "§a§l» Seçili" : "§e§lSeçmek için tıkla"
+                    ), selectedSlot == 6);
+
+            addSkillItem(gui, 34, Material.WITHER_ROSE, "§d§lToplu Lanetleme",
+                    Arrays.asList(
+                        "§e§lSol Tık §7- §b§lYakındakileri lanetle",
+                        "§e§lSağ Tık §7- §b§lLanetleri kaldır",
+                        "",
+                        "§c§lBekleme: §e120 saniye",
+                        selectedSlot == 7 ? "§a§l» Seçili" : "§e§lSeçmek için tıkla"
+                    ), selectedSlot == 7);
+        }
+    }
+
+    private void addSkillItem(Inventory gui, int slot, Material material, String name, List<String> lore, boolean isSelected) {
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
-        if (meta != null) {
-            meta.setDisplayName(name);
-            meta.setLore(Arrays.asList(lore));
-            item.setItemMeta(meta);
+        meta.setDisplayName((isSelected ? "§a" : "") + name);
+        meta.setLore(lore);
+        item.setItemMeta(meta);
+        
+        if (isSelected) {
+            // Add glowing effect for selected skill
+            item.addUnsafeEnchantment(org.bukkit.enchantments.Enchantment.LUCK, 1);
+            ItemMeta itemMeta = item.getItemMeta();
+            itemMeta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_ENCHANTS);
+            item.setItemMeta(itemMeta);
         }
+        
         gui.setItem(slot, item);
     }
 
-    public void selectSlot(Player player, int skillSlot) {
-        if (skillSlot >= 0 && skillSlot <= 3) {
+    public void handleClick(Player player, int slot) {
+        if (slot >= 45 && slot <= 53) {
+            handleNavigationClick(player, slot);
+            return;
+        }
+
+        Integer skillSlot = GUI_TO_SKILL_SLOT.get(slot);
+        if (skillSlot != null) {
             selectedSlots.put(player.getUniqueId(), skillSlot);
+            openGUI(player);
+        }
+    }
+
+    private void handleNavigationClick(Player player, int slot) {
+        int currentPage = this.currentPage.getOrDefault(player.getUniqueId(), 1);
+        
+        if (slot == 45 && currentPage > 1) {
+            openGUIPage(player, currentPage - 1);
+        } else if (slot == 53 && currentPage < 2) {
+            openGUIPage(player, currentPage + 1);
         }
     }
 
     public int getSelectedSlot(Player player) {
-        return selectedSlots.getOrDefault(player.getUniqueId(), 0);
-    }
-
-    private int getGUISlotFromSkillSlot(int skillSlot) {
-        return 10 + (skillSlot * 2);
-    }
-
-    private int getSkillSlotFromGUISlot(int guiSlot) {
-        return GUI_TO_SKILL_SLOT.getOrDefault(guiSlot, 0);
-    }
-
-    public int convertGUISlotToSkillSlot(int rawSlot) {
-        return GUI_TO_SKILL_SLOT.getOrDefault(rawSlot, 0);
+        return selectedSlots.getOrDefault(player.getUniqueId(), -1);
     }
 } 

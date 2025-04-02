@@ -10,7 +10,19 @@ website: https://github.com/byKurtu
 load: STARTUP
 permissions:
   zamankiran.use:
-    description: Allows using ZamanKiran commands
+    description: "Temel yetenek komutlarını kullanma izni"
+    default: true
+  zamankiran.curse:
+    description: "Lanet uygulama izni"
+    default: op
+  zamankiran.curse.remove:
+    description: "Lanet kaldırma izni"
+    default: op
+  zamankiran.curse.list:
+    description: "Lanetleri listeleme izni"
+    default: op
+  zamankiran.curse.group:
+    description: "Toplu lanet uygulama izni"
     default: op
 
 commands:
@@ -24,3 +36,24 @@ commands:
     usage: /zamankirangui
     permission: zamankiran.use
     aliases: [zkgui, zkg]
+  skills:
+    description: "Yetenek seçim menüsünü açar"
+    usage: "/skills"
+    permission: zamankiran.use
+    aliases: [yetenekler, yt]
+  lanet:
+    description: "Bir oyuncuya lanet uygular"
+    usage: "/lanet <oyuncu> <lanet_türü>"
+    permission: zamankiran.curse
+  lanetkaldir:
+    description: "Bir oyuncunun lanetlerini kaldırır"
+    usage: "/lanetkaldir <oyuncu>"
+    permission: zamankiran.curse.remove
+  lanetler:
+    description: "Aktif lanetleri listeler"
+    usage: "/lanetler [oyuncu]"
+    permission: zamankiran.curse.list
+  lanetgrubu:
+    description: "Belirli bir yarıçaptaki oyunculara lanet uygular"
+    usage: "/lanetgrubu <yarıçap> <lanet_türü>"
+    permission: zamankiran.curse.group
